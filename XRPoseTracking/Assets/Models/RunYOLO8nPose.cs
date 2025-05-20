@@ -5,6 +5,46 @@ using Unity.Sentis;
 using System.Threading.Tasks;
 using PassthroughCameraSamples;
 
+//LOOK AT https://github.com/Unity-Technologies/inference-engine-samples/blob/main/BlazeDetectionSample/Face/Assets/Scripts/BlazeUtils.cs
+// SampleImageAffine to do image sampling on the GPU and store in a tensor
+/* or blit?
+using UnityEngine;
+
+public class WebCamToRenderTexture : MonoBehaviour
+{
+    public WebCamTexture webCamTexture; // Assign in the inspector
+    public RenderTexture renderTexture; // Assign in the inspector
+
+    void Start()
+    {
+        if (webCamTexture == null)
+        {
+            webCamTexture = new WebCamTexture();
+            if (!webCamTexture.isPlaying)
+            {
+                webCamTexture.Play();
+            }
+        }
+
+        if (renderTexture == null)
+        {
+            renderTexture = new RenderTexture(webCamTexture.width, webCamTexture.height, 0);
+            // Optionally, set the render texture's format to match your needs
+            // renderTexture.format = RenderTextureFormat.ARGB32;
+        }
+    }
+
+    void Update()
+    {
+        if (webCamTexture != null && renderTexture != null)
+        {
+            //Blit the WebCamTexture to the RenderTexture
+            Graphics.Blit(webCamTexture, renderTexture);
+        }
+    }
+}
+*/
+
 public class RunYOLO8nPose : MonoBehaviour
 {
     [Header("Detection Settings")]
@@ -15,11 +55,11 @@ public class RunYOLO8nPose : MonoBehaviour
     // Drag the yolov8_pose.onnx file here
     public ModelAsset asset;
     private Worker engine;
-    private BackendType backend = BackendType.CPU;
+    private BackendType backend = BackendType.GPUPixel;
     private Texture2D _cpuTexture;
 
     private const int numJoints = 17;
-    private const int maxPeople = 50;    
+    private const int maxPeople = 1;    
 
     //Image size for the model
     private const int imageWidth = 640;
@@ -29,6 +69,8 @@ public class RunYOLO8nPose : MonoBehaviour
     [SerializeField, Range(0, 1)] float scoreThreshold = 0.5f;
 
     Tensor centersToCorners;
+
+    Tensor<float> webcamTextureTensor;
     public struct Keypoint
     {
         public float x;
@@ -53,6 +95,7 @@ public class RunYOLO8nPose : MonoBehaviour
         {
             _cpuTexture = new Texture2D(_webcamTexture.width, _webcamTexture.height, TextureFormat.RGBA32, false);
             print($"[ObjectDetector] WebCamTexture dimensions: {_webcamTexture.width}x{_webcamTexture.height}");
+            //webcamTextureTensor = new Tensor<float>(new TensorShape(1, 3, imageHeight, imageWidth));
         }
         else
         {
@@ -119,6 +162,7 @@ public class RunYOLO8nPose : MonoBehaviour
         _cpuTexture.Apply();        
         
         await ExecuteModel(_cpuTexture);
+        //await ExecuteModel(_webcamTexture);
     }
 
     bool isProcessing = false;
@@ -133,6 +177,8 @@ public class RunYOLO8nPose : MonoBehaviour
         isProcessing = true;
 
         var inputTensor = TextureConverter.ToTensor(inputTexture, imageWidth, imageHeight, 3);
+        //TextureTransform settings = new TextureTransform().SetDimensions(imageWidth, imageHeight, 3).SetTensorLayout(TensorLayout.NHWC);
+        //var inputTensor = TextureConverter.RenderToTexture(webcamTextureTensor, inputTexture, settings);
 
         engine.Schedule(inputTensor);
 
