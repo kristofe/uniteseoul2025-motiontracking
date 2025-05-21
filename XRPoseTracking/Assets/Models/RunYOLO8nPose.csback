@@ -26,7 +26,12 @@ public class WebCamToRenderTexture : MonoBehaviour
             }
         }
 
-
+        if (renderTexture == null)
+        {
+            renderTexture = new RenderTexture(webCamTexture.width, webCamTexture.height, 0);
+            // Optionally, set the render texture's format to match your needs
+            // renderTexture.format = RenderTextureFormat.ARGB32;
+        }
     }
 
     void Update()
@@ -66,7 +71,6 @@ public class RunYOLO8nPose : MonoBehaviour
     Tensor centersToCorners;
 
     Tensor<float> webcamTextureTensor;
-    RenderTexture renderTexture;
     public struct Keypoint
     {
         public float x;
@@ -85,14 +89,13 @@ public class RunYOLO8nPose : MonoBehaviour
 
     public void Start()
     {
-        Debug.Log("[ObjectDetector] Starting up and acquiring webcam texture.");
+        print("[ObjectDetector] Starting up and acquiring webcam texture.");
         _webcamTexture = webCamTextureManager.WebCamTexture;
         if (_webcamTexture != null)
         {
             _cpuTexture = new Texture2D(_webcamTexture.width, _webcamTexture.height, TextureFormat.RGBA32, false);
-            Debug.Log($"[ObjectDetector] WebCamTexture dimensions: {_webcamTexture.width}x{_webcamTexture.height}");
+            print($"[ObjectDetector] WebCamTexture dimensions: {_webcamTexture.width}x{_webcamTexture.height}");
             //webcamTextureTensor = new Tensor<float>(new TensorShape(1, 3, imageHeight, imageWidth));
-            renderTexture = new RenderTexture(_webcamTexture.width, _webcamTexture.height, 0);
         }
         else
         {
@@ -102,8 +105,11 @@ public class RunYOLO8nPose : MonoBehaviour
         LoadModel(backend);
     }
   
-   void LoadModel(BackendType backend){
-        var model1 = ModelLoader.Load(asset); 
+   void LoadModel(BackendType backend)
+    {
+        //Load model
+        var model1 = ModelLoader.Load(asset);
+
         var centersToCornersData = new[]
             {
                         1,      0,      1,      0,
@@ -138,88 +144,51 @@ public class RunYOLO8nPose : MonoBehaviour
 
     async void Update()
     {
-        Debug.Log("[ObjectDetector] Update.");
-        if (isProcessing){
-            Debug.Log("[ObjectDetector] isProcessing == true... exiting Update().");
+        if (isProcessing)
             return;
-        }
+
         if (!_webcamTexture)
         {
             _webcamTexture = webCamTextureManager.WebCamTexture;
-
+            
             if (_webcamTexture)
             {
-                //_cpuTexture = new Texture2D(_webcamTexture.width, _webcamTexture.height, TextureFormat.RGBA32, false);
-                renderTexture = new RenderTexture(_webcamTexture.width, _webcamTexture.height, 0, RenderTextureFormat.ARGB32);  // Matching TextureFormat.RGBA32 used by _cpuTexture
-                Debug.Log("[ObjectDetector] WebCamTexture is now available; texture created.");
+                _cpuTexture = new Texture2D(_webcamTexture.width, _webcamTexture.height, TextureFormat.RGBA32, false);
+                print("[ObjectDetector] WebCamTexture is now available; CPU texture created.");
             }
         }
 
-        if(renderTexture == null)
-        {
-            Debug.Log("[ObjectDetector] RenderTexture is null.");
-            return;
-        }
-        if(!renderTexture.IsCreated())
-        {
-            Debug.LogError("[ObjectDetector] RenderTexture is not created.");
-        }
-        Debug.Log("[ObjectDetector] blitting webcam texture to render texture.");
-        Graphics.Blit(_webcamTexture, renderTexture);
-        //_cpuTexture.SetPixels(_webcamTexture.GetPixels());
-        //_cpuTexture.Apply();        
+        _cpuTexture.SetPixels(_webcamTexture.GetPixels());
+        _cpuTexture.Apply();        
         
-        //await ExecuteModel(_cpuTexture);
-        await ExecuteModel(renderTexture);
+        await ExecuteModel(_cpuTexture);
+        
+        //await ExecuteModel(_webcamTexture);
     }
 
     bool isProcessing = false;
 
-    async Task ExecuteModel(RenderTexture inputTexture)
+    async Task ExecuteModel(Texture inputTexture)
     {
-        Debug.Log("[ObjectDetector] Executing model.");
         if (inputTexture == null)
-        {
-            Debug.Log("[ObjectDetector] Input texture is null.");
             return;
-        }
         if (isProcessing)
-        {
-            Debug.Log("[ObjectDetector] isProcessing == true... exiting ExecuteModel().");
             return;
-        }
 
         isProcessing = true;
 
-        //var inputTensor = TextureConverter.ToTensor(inputTexture, imageWidth, imageHeight, 3);
-        //engine.Schedule(inputTensor);
-        Debug.Log("[ObjectDetector] 1"); 
-        TextureTransform settings = new TextureTransform().SetDimensions(imageWidth, imageHeight, 3).SetTensorLayout(TensorLayout.NHWC);
+        var inputTensor = TextureConverter.ToTensor(inputTexture, imageWidth, imageHeight, 3);
+        //TextureTransform settings = new TextureTransform().SetDimensions(imageWidth, imageHeight, 3).SetTensorLayout(TensorLayout.NHWC);
+        //var inputTensor = TextureConverter.RenderToTexture(webcamTextureTensor, inputTexture, settings);
 
+        engine.Schedule(inputTensor);
 
-        // THIS CALL NEVER RETURNS!!!!!!!!
-        // THIS CALL NEVER RETURNS!!!!!!!!
-        // THIS CALL NEVER RETURNS!!!!!!!!
-        // THIS CALL NEVER RETURNS!!!!!!!!
-        // THIS CALL NEVER RETURNS!!!!!!!!
-        // THIS CALL NEVER RETURNS!!!!!!!!
-        Debug.Log("[ObjectDetector] 2"); 
-        TextureConverter.RenderToTexture(webcamTextureTensor, inputTexture, settings);
-
-        Debug.Log("[ObjectDetector] 3"); 
-        engine.Schedule(webcamTextureTensor);
-
-        Debug.Log("[ObjectDetector] 4"); 
         using var output_ = engine.PeekOutput(0) as Tensor<float>;
-        Debug.Log("[ObjectDetector] 5"); 
         using var ketPoints_ = engine.PeekOutput(1) as Tensor<float>;
 
-        Debug.Log("[ObjectDetector] 6"); 
         using var outputTensor = await output_.ReadbackAndCloneAsync();
-        Debug.Log("[ObjectDetector] 7"); 
         using var keyPointsTensor = await ketPoints_.ReadbackAndCloneAsync();
 
-        Debug.Log("[ObjectDetector] 8"); 
         objectRenderer.RenderPoseDetections(outputTensor, keyPointsTensor);
 
         isProcessing = false;
