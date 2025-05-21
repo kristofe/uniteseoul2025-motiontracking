@@ -92,7 +92,9 @@ public class RunYOLO8nPose : MonoBehaviour
             _cpuTexture = new Texture2D(_webcamTexture.width, _webcamTexture.height, TextureFormat.RGBA32, false);
             Debug.Log($"[ObjectDetector] WebCamTexture dimensions: {_webcamTexture.width}x{_webcamTexture.height}");
             //webcamTextureTensor = new Tensor<float>(new TensorShape(1, 3, imageHeight, imageWidth));
-            renderTexture = new RenderTexture(_webcamTexture.width, _webcamTexture.height, 0);
+            renderTexture = new RenderTexture(_webcamTexture.width, _webcamTexture.height, 0, RenderTextureFormat.ARGB32);
+            renderTexture.enableRandomWrite = true;
+            renderTexture.Create();
         }
         else
         {
@@ -151,6 +153,8 @@ public class RunYOLO8nPose : MonoBehaviour
             {
                 //_cpuTexture = new Texture2D(_webcamTexture.width, _webcamTexture.height, TextureFormat.RGBA32, false);
                 renderTexture = new RenderTexture(_webcamTexture.width, _webcamTexture.height, 0, RenderTextureFormat.ARGB32);  // Matching TextureFormat.RGBA32 used by _cpuTexture
+                renderTexture.enableRandomWrite = true;
+                renderTexture.Create();
                 Debug.Log("[ObjectDetector] WebCamTexture is now available; texture created.");
             }
         }
@@ -163,6 +167,7 @@ public class RunYOLO8nPose : MonoBehaviour
         if(!renderTexture.IsCreated())
         {
             Debug.LogError("[ObjectDetector] RenderTexture is not created.");
+            return;
         }
         Debug.Log("[ObjectDetector] blitting webcam texture to render texture.");
         Graphics.Blit(_webcamTexture, renderTexture);
@@ -193,33 +198,25 @@ public class RunYOLO8nPose : MonoBehaviour
 
         //var inputTensor = TextureConverter.ToTensor(inputTexture, imageWidth, imageHeight, 3);
         //engine.Schedule(inputTensor);
-        Debug.Log("[ObjectDetector] 1"); 
         TextureTransform settings = new TextureTransform().SetDimensions(imageWidth, imageHeight, 3).SetTensorLayout(TensorLayout.NHWC);
 
+        if(webcamTextureTensor == null)
+        {
+            webcamTextureTensor = new Tensor<float>(new TensorShape(1, 3, imageHeight, imageWidth));
+        }
 
-        // THIS CALL NEVER RETURNS!!!!!!!!
-        // THIS CALL NEVER RETURNS!!!!!!!!
-        // THIS CALL NEVER RETURNS!!!!!!!!
-        // THIS CALL NEVER RETURNS!!!!!!!!
-        // THIS CALL NEVER RETURNS!!!!!!!!
-        // THIS CALL NEVER RETURNS!!!!!!!!
-        Debug.Log("[ObjectDetector] 2"); 
         TextureConverter.RenderToTexture(webcamTextureTensor, inputTexture, settings);
 
-        Debug.Log("[ObjectDetector] 3"); 
+        // YOLO Has a a layer NonMaxSuppression that needs to be run on the CPU.  This is a limitation of the current Unity Inference Engine.
+        // So yolo will be sending data to and from the CPU which KILLS frames per second.
         engine.Schedule(webcamTextureTensor);
 
-        Debug.Log("[ObjectDetector] 4"); 
         using var output_ = engine.PeekOutput(0) as Tensor<float>;
-        Debug.Log("[ObjectDetector] 5"); 
         using var ketPoints_ = engine.PeekOutput(1) as Tensor<float>;
 
-        Debug.Log("[ObjectDetector] 6"); 
         using var outputTensor = await output_.ReadbackAndCloneAsync();
-        Debug.Log("[ObjectDetector] 7"); 
         using var keyPointsTensor = await ketPoints_.ReadbackAndCloneAsync();
 
-        Debug.Log("[ObjectDetector] 8"); 
         objectRenderer.RenderPoseDetections(outputTensor, keyPointsTensor);
 
         isProcessing = false;
